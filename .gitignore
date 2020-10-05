@@ -2,6 +2,7 @@
 .idea/
 .old_logs
 __pycache__
+*.out
 .ipynb_checkpoints
 logs/
 saved_models/

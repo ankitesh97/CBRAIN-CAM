@@ -26,20 +26,12 @@ def main(args):
     """
     #Create training dataset
     logging.info('Preprocess training dataset')
-    preprocess(args.in_dir, args.in_fns, args.out_dir, args.out_fn, args.vars,split_bflx=args.split_bflx)
+    preprocess(args.in_dir, args.in_fns, args.out_dir, args.out_fn, args.X_vars, args.y_vars)
 
 #     Shuffle training dataset
     if args.shuffle:
-        if(args.split_bflx):
-            logging.info('Shuffle training dataset for pos_crh')
-            shuffle(args.out_dir, 'PosCRH_'+args.out_fn, args.chunk_size)
-            logging.info('Shuffle training dataset for neg_crh')
-            shuffle(args.out_dir, 'NegCRH_'+args.out_fn, args.chunk_size)
-
-        else:
-
-            logging.info('Shuffle training dataset')
-            shuffle(args.out_dir, args.out_fn, args.chunk_size)
+        logging.info('Shuffle training dataset')
+        shuffle(args.out_dir, args.out_fn, args.chunk_size)
 
     # Potentially
     if args.val_in_fns is not None:
@@ -49,26 +41,11 @@ def main(args):
     if args.norm_fn is not None:
         logging.info(f'Compute normalization file from {args.norm_train_or_valid}')
 
-        if(args.split_bflx):
-            logging.info(f'Compute normalization file from {args.norm_train_or_valid} on blfx split')
-            logging.info(f'Compute normalization file from postive crh')
-            normalize(
-                args.out_dir,
-                'PosCRH_'+args.out_fn,
-                'PosCRH_'+args.norm_fn
-            )
-            logging.info(f'Compute normalization file from negative crh')
-            normalize(
-                args.out_dir,
-                'NegCRH_'+args.out_fn,
-                'NegCRH_'+args.norm_fn
-            )
-        else:
-            normalize(
-             args.out_dir,
-             args.out_fn if args.norm_train_or_valid == 'train' else args.val_out_fn,
-             args.norm_fn
-            )            
+        normalize(
+         args.out_dir,
+         args.out_fn if args.norm_train_or_valid == 'train' else args.val_out_fn,
+         args.norm_fn
+        )            
 
     logging.info('Finish entire preprocessing script.')
 
