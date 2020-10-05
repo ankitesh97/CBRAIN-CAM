@@ -358,7 +358,7 @@ def CRH(qv0,T,ps,hyam,hybm):
 
 
 
-def create_stacked_da(ds, vars):
+def create_stacked_da(ds, X_vars, y_vars):
     """
     In this function the derived variables are computed and the right time steps are selected.
 
@@ -473,7 +473,7 @@ def reshape_da(da):
     return da.transpose('sample', 'var_names')
 
 
-def preprocess(in_dir, in_fns, out_dir, out_fn, vars, lev_range=(0, 30),split_bflx=False):
+def preprocess(in_dir, in_fns, out_dir, out_fn, X_vars, y_vars, lev_range=(0, 30)):
     """
     This is the main script that preprocesses one file.
 
@@ -484,11 +484,8 @@ def preprocess(in_dir, in_fns, out_dir, out_fn, vars, lev_range=(0, 30),split_bf
     from os import path
     if in_dir=='None': logging.debug(f'No in_dir so in_fns is set to in_fns')
     else: in_fns = path.join(in_dir, in_fns)
-    out_fn_pos = "PosCRH_"+out_fn
-    out_fn_neg = "NegCRH_"+out_fn
     out_fn = path.join(out_dir, out_fn)
-    out_fn_pos = path.join(out_dir, out_fn_pos)
-    out_fn_neg = path.join(out_dir, out_fn_neg)
+    
     logging.debug(f'Start preprocessing file {out_fn}')
 
     logging.info('Reading input files')
@@ -499,44 +496,14 @@ def preprocess(in_dir, in_fns, out_dir, out_fn, vars, lev_range=(0, 30),split_bf
     ds = ds.isel(lev=slice(*lev_range, 1))
 
     logging.info('Create stacked dataarray')
-    da = create_stacked_da(ds, vars)
+    da = create_stacked_da(ds, X_vars,y_vars)
 
     logging.info('Stack and reshape dataarray')
     da = reshape_da(da).reset_index('sample')
-    print(split_bflx)
-    if(split_bflx):
-        logging.info('Splitting the dataset with respect to crh value')
-        path = '/home1/07064/tg863631/CBrain_project/CBRAIN-CAM/cbrain/'
-        path_hyam = 'hyam_hybm.pkl'
-
-        hf = open(path+path_hyam,'rb')
-        hyam,hybm = pickle.load(hf)
-        qv0 = da[:,:30]
-        T = da[:,30:60]
-        ps = da[:,60]
-        ## for rh
-        if "RH" in vars or "TfromNS" in vars:
-            vars_q = ['QBP', 'TBP', 'PS', 'SOLIN', 'SHFLX', 'LHFLX', 'PHQ', 'TPHYSTND', 'FSNT', 'FSNS', 'FLNT', 'FLNS']
-            da_q = create_stacked_da(ds, vars_q)
-            da_q = reshape_da(da_q).reset_index('sample')
-            qv0 = da_q[:,:30]
-            T = da_q[:,30:60]
-            ps = da_q[:,60]
-
-        mask = CRH(qv0,T,ps,hyam,hybm)
-        da_pos = da.where(mask,drop=True)
-        logging.info(str(da_pos.shape[0])+' data points found with postive threshold')
-        logging.info(f'Save postive CRH dataarray as {out_fn_pos}')
-        da_pos.to_netcdf(out_fn_pos)
-        da_neg = da.where(np.logical_not(mask),drop=True)
-        logging.info(str(da_neg.shape[0])+' data points found with negative threshold')
-        logging.info(f'Save negative CRH dataarray as {out_fn_neg}')
-        da_neg.to_netcdf(out_fn_neg)
 
 
-    else:
-        logging.info(f'Save dataarray as {out_fn}')
-        da.to_netcdf(out_fn)
+    logging.info(f'Save dataarray as {out_fn}')
+    da.to_netcdf(out_fn)
 
     logging.info('Done!')
 

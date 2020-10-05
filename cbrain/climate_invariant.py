@@ -9,11 +9,12 @@ from cbrain.cam_constants import *
 from tensorflow.keras.layers import *
 from tensorflow.keras import layers
 import enum
-import tensorflow_probability as tfp
+from tensorflow import math as tfm
+# import tensorflow_probability as tfp
 import yaml
 import pickle
 
-path = '/home/ankitesh/CBrain_project/CBRAIN-CAM/cbrain/'
+path = '/export/nfs0home/ankitesg/CBrain_project/CBRAIN-CAM/cbrain/'
 path_hyam = 'hyam_hybm.pkl'
 
 hf = open(path+path_hyam,'rb')
@@ -503,20 +504,26 @@ class QV2RHNumpy:
         return X_result
 
 class LhflxTransNumpy:
-    def __init__(self, inp_sub, inp_div, hyam, hybm):
+    def __init__(self, inp_sub, inp_div, hyam, hybm,epsilon=1e-3):
         self.inp_sub, self.inp_div, self.hyam, self.hybm = \
             np.array(inp_sub), np.array(inp_div),\
         np.array(hyam), np.array(hybm)
         # Define variable indices here
         # Input
         self.QBP_idx = slice(0,30)
+        self.epsilon = epsilon
         self.TBP_idx = slice(30,60)
         self.PS_idx = 60
         self.SHFLX_idx = 62
         self.LHFLX_idx = 63
         self.TS_idx = 64
-
+        
     def process(self,X):
+        qvprior = X[:,self.QBP_idx]*self.inp_div[self.QBP_idx]+self.inp_sub[self.QBP_idx]
+        X[:,self.LHFLX_idx] = X[:,self.LHFLX_idx]/(L_V*(self.epsilon+qvprior[:,-1]))
+        return X
+
+    def process_V1(self,X):
         Tprior = X[:,self.TBP_idx]*self.inp_div[self.TBP_idx]+self.inp_sub[self.TBP_idx]
         qvprior = X[:,self.QBP_idx]*self.inp_div[self.QBP_idx]+self.inp_sub[self.QBP_idx]
         PSprior = X[:,self.PS_idx]*self.inp_div[self.PS_idx]+self.inp_sub[self.PS_idx]
@@ -540,6 +547,19 @@ class T2TmTNSNumpy:
         self.LHFLX_idx = 63
 
     def process(self,X):
+        Tprior = X[:,self.TBP_idx]*self.inp_div[self.TBP_idx]+self.inp_sub[self.TBP_idx]
+
+        Tile_dim = [1,30]
+        TNSprior = (((Tprior-220)/(np.tile(np.expand_dims(Tprior[:,-1],axis=1)-220,Tile_dim)))-\
+                    self.inp_subTNS[self.TBP_idx])/\
+        self.inp_divTNS[self.TBP_idx]
+
+        post = np.concatenate([X[:,:30],TNSprior.astype(np.float32),X[:,60:]], axis=1)
+
+        X_result = post
+        return X_result
+    
+    def process_V1(self,X):
         Tprior = X[:,self.TBP_idx]*self.inp_div[self.TBP_idx]+self.inp_sub[self.TBP_idx]
 
         Tile_dim = [1,30]
@@ -724,14 +744,14 @@ class DataGeneratorClimInv(DataGenerator):
              lev=None, interm_size=40,
              lower_lim=6,
              is_continous=True,Tnot=5,
-                mode='train'):
-
+                mode='train', exp=None):
         self.scaling = scaling
         self.interpolate = interpolate
         self.rh_trans = rh_trans
         self.t2tns_trans = t2tns_trans
         self.lhflx_trans = lhflx_trans
         self.inp_shape = 64
+        self.exp = exp
         self.mode=mode
         super().__init__(data_fn, input_vars,output_vars,norm_fn,input_transform,output_transform,
                         batch_size,shuffle,xarray,var_cut_off,normalize_flag) ## call the base data generator
@@ -771,17 +791,49 @@ class DataGeneratorClimInv(DataGenerator):
         X_norm = self.input_transform.transform(X)
         Y = self.output_transform.transform(Y)
         X_result = X_norm
+        if self.exp:
+            if self.exp['LHFLX']:
+                if self.lhflx_trans:
+                    X_result = self.lhflxLayer.process(X_result)
+                    X_result = X_result[:,:64]
+                    X = X[:,:64]
 
-        if self.rh_trans:
-            X_result = self.qv2rhLayer.process(X_result)
+                if self.rh_trans:
+                    X_result = self.qv2rhLayer.process(X_result)
+                    
+                
+               
+                if self.t2tns_trans:
+                    X_result = self.t2tnsLayer.process(X_result)
+                    
+            else:
+                if self.rh_trans:
+                    X_result = self.qv2rhLayer.process(X_result) 
+                
+                
+               
+                if self.t2tns_trans:
+                    X_result = self.t2tnsLayer.process(X_result)
+                    
+                if self.lhflx_trans:
+                    X_result = self.lhflxLayer.process(X_result)
+                    X_result = X_result[:,:64]
+                    X = X[:,:64]
 
-        if self.lhflx_trans:
-            X_result = self.lhflxLayer.process(X_result)
-            X_result = X_result[:,:64]
-            X = X[:,:64]
 
-        if self.t2tns_trans:
-            X_result = self.t2tnsLayer.process(X_result)
+        else:
+            if self.rh_trans:
+                X_result = self.qv2rhLayer.process(X_result)
+            
+               
+            if self.t2tns_trans:
+                X_result = self.t2tnsLayer.process_V1(X_result)
+                
+            if self.lhflx_trans:
+                X_result = self.lhflxLayer.process_V1(X_result)
+                X_result = X_result[:,:64]
+                X = X[:,:64]
+
 
         if self.scaling:
             scalings = self.scalingLayer.process(X)
@@ -801,14 +853,49 @@ class DataGeneratorClimInv(DataGenerator):
         X_norm = self.input_transform.transform(X)
         X_result = X_norm
 
-        if self.rh_trans:
-            X_result = self.qv2rhLayer.process(X_result)
+        if self.exp:
+            if self.exp['LHFLX']:
+                if self.lhflx_trans:
+                    X_result = self.lhflxLayer.process(X_result)
+                    X_result = X_result[:,:64]
+                    X = X[:,:64]
 
-        if self.lhflx_trans:
-            X_result = self.lhflxLayer.process(X_result)
+                if self.rh_trans:
+                    X_result = self.qv2rhLayer.process(X_result)
+                    
+                
+               
+                if self.t2tns_trans:
+                    X_result = self.t2tnsLayer.process(X_result)
+                    
+            else:
+                if self.rh_trans:
+                    X_result = self.qv2rhLayer.process(X_result) 
+                
+                
+               
+                if self.t2tns_trans:
+                    X_result = self.t2tnsLayer.process(X_result)
+                    
+                if self.lhflx_trans:
+                    X_result = self.lhflxLayer.process(X_result)
+                    X_result = X_result[:,:64]
+                    X = X[:,:64]
 
-        if self.t2tns_trans:
-            X_result = self.t2tnsLayer.process(X_result)
+
+        else:
+            if self.rh_trans:
+                X_result = self.qv2rhLayer.process(X_result)
+            
+               
+            if self.t2tns_trans:
+                X_result = self.t2tnsLayer.process_V1(X_result)
+                
+            if self.lhflx_trans:
+                X_result = self.lhflxLayer.process_V1(X_result)
+                X_result = X_result[:,:64]
+                X = X[:,:64]
+
 
         if self.scaling:
             scalings = self.scalingLayer.process(X)
@@ -836,6 +923,7 @@ class ClimateNet:
              #this can be none if no scaling is present
              train_gen_RH_pos=None,train_gen_RH_neg=None,
              train_gen_TNS_pos=None,train_gen_TNS_neg=None,
+                 exp = None
                 ):
 
 
@@ -865,7 +953,8 @@ class ClimateNet:
                 hyam=hyam,hybm=hybm,
                 inp_subRH=inp_subRH, inp_divRH=inp_divRH,
                 inp_subTNS=inp_subTNS,inp_divTNS=inp_divTNS,
-                mode='val'
+                mode='val',
+                exp = exp
 
         )
 
@@ -994,7 +1083,7 @@ def load_climate_model(dict_lay,config_fn,data_fn,lev,hyam,hybm,TRAINDIR,
                         model=None,
                         pos_model=None,neg_model=None,
                         train_gen_RH_pos=None,train_gen_RH_neg=None,
-                        train_gen_TNS_pos=None,train_gen_TNS_neg=None):
+                        train_gen_TNS_pos=None,train_gen_TNS_neg=None,exp=None):
 
     obj = ClimateNet(dict_lay,data_fn,config_fn,
                      lev,hyam,hybm,TRAINDIR,
@@ -1007,5 +1096,5 @@ def load_climate_model(dict_lay,config_fn,data_fn,lev,hyam,hybm,TRAINDIR,
                     model = model,
                     pos_model=pos_model,neg_model=neg_model,
                     train_gen_RH_pos=train_gen_RH_pos,train_gen_RH_neg=train_gen_RH_neg,
-                    train_gen_TNS_pos=train_gen_TNS_pos,train_gen_TNS_neg=train_gen_TNS_neg)
+                    train_gen_TNS_pos=train_gen_TNS_pos,train_gen_TNS_neg=train_gen_TNS_neg,exp=exp)
     return obj
