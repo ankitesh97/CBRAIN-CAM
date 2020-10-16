@@ -125,6 +125,10 @@ def compute_TfromMA(ds):
 def compute_TfromNS(ds):
     return compute_bp(ds,'TBP')-compute_bp(ds,'TBP')[:,-1,:,:]
 
+def compute_TfromNSV2(ds):
+    TBP = compute_bp(ds,'TBP')
+    return (TBP - 220)/(TBP[:,-1,:,:]-220)
+
 def compute_TfromTS(ds):
     return compute_bp(ds,'TBP')-ds['TS'][1:,:,:]
 
@@ -358,7 +362,7 @@ def CRH(qv0,T,ps,hyam,hybm):
 
 
 
-def create_stacked_da(ds, X_vars, y_vars):
+def create_stacked_da(ds, vars):
     """
     In this function the derived variables are computed and the right time steps are selected.
 
@@ -394,6 +398,8 @@ def create_stacked_da(ds, X_vars, y_vars):
             da = compute_TfromMA(ds)
         elif var == 'TfromNS':
             da = compute_TfromNS(ds)
+        elif var == 'TfromNSV2':
+            da = compute_TfromNSV2(ds)
         elif var == 'Carnotmax':
             da = compute_Carnotmax(ds)
         elif var == 'CarnotS':
@@ -473,7 +479,7 @@ def reshape_da(da):
     return da.transpose('sample', 'var_names')
 
 
-def preprocess(in_dir, in_fns, out_dir, out_fn, X_vars, y_vars, lev_range=(0, 30)):
+def preprocess(in_dir, in_fns, out_dir, out_fn, vars, lev_range=(0, 30)):
     """
     This is the main script that preprocesses one file.
 
@@ -496,7 +502,7 @@ def preprocess(in_dir, in_fns, out_dir, out_fn, X_vars, y_vars, lev_range=(0, 30
     ds = ds.isel(lev=slice(*lev_range, 1))
 
     logging.info('Create stacked dataarray')
-    da = create_stacked_da(ds, X_vars,y_vars)
+    da = create_stacked_da(ds, vars)
 
     logging.info('Stack and reshape dataarray')
     da = reshape_da(da).reset_index('sample')

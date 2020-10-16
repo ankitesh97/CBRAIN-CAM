@@ -26,7 +26,7 @@ def main(args):
     """
     #Create training dataset
     logging.info('Preprocess training dataset')
-    preprocess(args.in_dir, args.in_fns, args.out_dir, args.out_fn, args.X_vars, args.y_vars)
+    preprocess(args.in_dir, args.in_fns, args.out_dir, args.out_fn, args.vars)
 
 #     Shuffle training dataset
     if args.shuffle:
@@ -36,7 +36,7 @@ def main(args):
     # Potentially
     if args.val_in_fns is not None:
         logging.info('Preprocess validation dataset')
-        preprocess(args.in_dir, args.val_in_fns, args.out_dir, args.val_out_fn, args.vars,split_bflx=args.split_bflx)
+        preprocess(args.in_dir, args.val_in_fns, args.out_dir, args.val_out_fn, args.vars)
 
     if args.norm_fn is not None:
         logging.info(f'Compute normalization file from {args.norm_train_or_valid}')

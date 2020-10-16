@@ -10,9 +10,13 @@ from tensorflow.keras.layers import *
 from tensorflow.keras import layers
 import enum
 from tensorflow import math as tfm
-# import tensorflow_probability as tfp
+import tensorflow_probability as tfp
 import yaml
 import pickle
+
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior() 
+
 
 path = '/export/nfs0home/ankitesg/CBrain_project/CBRAIN-CAM/cbrain/'
 path_hyam = 'hyam_hybm.pkl'
@@ -302,12 +306,16 @@ class reverseInterpLayer(layers.Layer):
     def call(self,inputs):
         X = inputs[0]
         X_original = inputs[1] #batch_size X 30, lev_tilde_before
-        x_ref_min = tf.fill(value=0.0,dims=[tf.shape(X)[0],])
-        x_ref_max = tf.fill(value=1.4,dims=[tf.shape(X)[0],])
+        x_ref_min = tf.fill(value=-0.4,dims=[tf.shape(X)[0],])
+        x_ref_max = tf.fill(value=1.0,dims=[tf.shape(X)[0],])
         y_ref_pressure = X[:,:self.interim_dim_size]
         y_ref_temperature = X[:,self.interim_dim_size:2*self.interim_dim_size]
+        zeros_dims = tf.stack([tf.shape(X)[0], 5])
+        zeros = tf.fill(zeros_dims, 0.0)
         y_pressure = tfp.math.batch_interp_regular_1d_grid(X_original,x_ref_min,x_ref_max,y_ref_pressure)
+        y_pressure = tf.concat((zeros,y_pressure), axis=1)
         y_temperature = tfp.math.batch_interp_regular_1d_grid(X_original,x_ref_min,x_ref_max,y_ref_temperature)
+        y_temperature = tf.concat((zeros,y_temperature), axis=1)
         y_tilde_before = tf.concat([y_pressure,y_temperature,X[:,2*self.interim_dim_size:]], axis=1)
         return y_tilde_before
 
@@ -518,9 +526,10 @@ class LhflxTransNumpy:
         self.LHFLX_idx = 63
         self.TS_idx = 64
         
+    ## TODO: Scale the values to 0 to 1:
     def process(self,X):
         qvprior = X[:,self.QBP_idx]*self.inp_div[self.QBP_idx]+self.inp_sub[self.QBP_idx]
-        X[:,self.LHFLX_idx] = X[:,self.LHFLX_idx]/(L_V*(self.epsilon+qvprior[:,-1]))
+        X[:,self.LHFLX_idx] = X[:,self.LHFLX_idx]/(L_V*(self.epsilon+qvprior[:,-1])) 
         return X
 
     def process_V1(self,X):
@@ -571,6 +580,16 @@ class T2TmTNSNumpy:
 
         X_result = post
         return X_result
+    
+    def get_t_tilde(self,X):
+        Tprior = X[:,self.TBP_idx]
+
+        Tile_dim = [1,30]
+        TNSprior = (Tprior-220)/np.tile(np.expand_dims(Tprior[:,-1],axis=1)-220,Tile_dim)
+        post = np.concatenate([X[:,:30],TNSprior.astype(np.float32),X[:,60:]], axis=1)
+
+        X_result = post
+        return X_result[:,30:60]
 
 
 ################################### Scaling layer Numpy #################################################
@@ -609,13 +628,14 @@ class ScalingNumpy:
 '''this is the forward interpolation layer lev-levTilde takes the normalized input vectors'''
 
 class InterpolationNumpy:
-    def __init__(self,lev,is_continous,Tnot,lower_lim,interm_size):
+    def __init__(self,lev,is_continous,Tnot,lower_lim,interm_size, t2tns_layer = None):
         self.lev = lev
         self.lower_lim = lower_lim
         self.Tnot = Tnot
         self.is_continous = is_continous ## for discrete or continous transformation
         self.interm_size = interm_size
-
+        self.t2tns_trans = t2tns_layer
+        
     @staticmethod
     def levTildeDiscrete(X,lev,inp_sub, inp_div, batch_size=1024,interm_dim_size=40):
         '''can be used independently
@@ -670,9 +690,10 @@ class InterpolationNumpy:
         alpha = (1.0/2)*(2 - np.exp(-1*deltaT/Tnot))
         lev_roof = alpha*lev1 + (1-alpha)*lev2
 
+
         lev_tilde = (lev_stacked[:,-1].reshape(-1,1)-lev_stacked[:])/(lev_stacked[:,-1].reshape(-1,1)-lev_roof.reshape(-1,1))#batchx30
         lev_tilde_after_single = np.linspace(1.4,0,num=interm_dim_size)
-
+        #-0.4 to 1
         X_temperature_after = []
         X_pressure_after = []
 
@@ -688,8 +709,53 @@ class InterpolationNumpy:
 
         return  X_result, lev_tilde, lev_roof
 
-
+    def tranform_lev_tilde(X):
+        lev_tilde = t2tns_trans.process(X)[0][30:60]*inp_divTNS[30:60] + inp_subTNS[30:60]
+        lev_tilde_temp = lev_tilde[5:]
+        diff = np.diff(lev_tilde_temp)
+        concatenated = []
+        for i in range(X.shape[0]):
+            conc = np.concatenate((lev_tilde_temp[:-1][diff<0] + 2*np.flip(np.cumsum(np.flip(diff[diff<0]))),lev_tilde_temp[:-1][diff>=0], [1.]))
+            concatenated.append(conc)
+        return np.stack(concatenated)
+    
     def process(self,X,X_result):
+        batch_size = X.shape[0]
+        lev_tilde = self.t2tns_trans.get_t_tilde(X)
+        concatenated = []
+        for i in range(batch_size):
+            lev_tilde_temp = lev_tilde[i,5:]
+            diff = np.diff(lev_tilde_temp)
+            conc = np.concatenate((lev_tilde_temp[:-1][diff<0] + 2*np.flip(np.cumsum(np.flip(diff[diff<0]))),lev_tilde_temp[:-1][diff>=0], [1.]))
+            concatenated.append(conc)
+        lev_tilde_modified = np.stack(concatenated)
+        X_processed = self.levTildeV2(X,X_result,lev_tilde_modified,batch_size=batch_size)
+        X_processed = np.hstack((X_processed,lev_tilde_modified))
+        return X_processed
+                    
+    def levTildeV2(self,X, X_result, lev_tilde,batch_size=1024, interm_dim_size=40):
+        '''can be used independently
+            note: the input X should be raw transformed i.e without any other transformation(RH or QV)
+            or if given in that way then please provide appropriate inp_sub, inp_div
+        ''' ## not being used in the process method
+        X_pressure = X_result[:,:30]
+        X_temperature = X_result[:,30:60] #batchx30
+        lev_tilde_after_single = np.linspace(-0.4,1,num=interm_dim_size)
+        #-0.4 to 1
+        X_temperature_after = []
+        X_pressure_after = []
+        ##. x , xp , fp x=ne_coordinatoe, xp=t-tilde, fp=t-tilde
+        for i in range(batch_size):
+            X_temperature_after.append(np.interp(lev_tilde_after_single, lev_tilde[i], X_temperature[i][5:]))
+            X_pressure_after.append(np.interp(lev_tilde_after_single, lev_tilde[i], X_pressure[i][5:]))
+
+        X_temperature_after = np.array(X_temperature_after)
+        X_pressure_after = np.array(X_pressure_after)
+
+        X_processed = np.hstack((X_pressure_after,X_temperature_after,X_result[:,60:64]))
+        return  X_processed
+                    
+    def process_V1(self,X,X_result):
 
         batch_size = X.shape[0]
         X_temperature = X[:,30:60]
@@ -771,7 +837,8 @@ class DataGeneratorClimInv(DataGenerator):
             self.inp_shape += 1
 
         if interpolate:
-            self.interpLayer = InterpolationNumpy(lev,is_continous,Tnot,lower_lim,interm_size)
+            t2tns_layer = T2TmTNSNumpy(self.inp_sub,self.inp_div,inp_subTNS,inp_divTNS,hyam,hybm)
+            self.interpLayer = InterpolationNumpy(lev,is_continous,Tnot,lower_lim,interm_size,t2tns_layer=t2tns_layer)
             self.inp_shape += interm_size*2 + 4 + 30 ## 4 same as 60-64 and 30 for lev_tilde.size
 
 
