@@ -143,6 +143,42 @@ class ModelDiagnostics():
         return fig
 
     # Statistics computation
+    
+    def compute_stats_random(self,niter):
+        psum = np.zeros((self.nlat, self.nlon, self.valid_gen.n_outputs))
+        tsum = np.copy(psum)
+        sse = np.copy(psum)
+        psqsum = np.copy(psum)
+        tsqsum = np.copy(psum)
+        times = np.random.choice(a=self.valid_gen.n_batches,size=niter,replace=False)
+        nt= niter
+        for itime in tqdm(times):
+            t, p = self.get_truth_pred(itime)  # [lat, lon, var, lev]
+            # Compute statistics
+            psum += p
+            tsum += t
+            psqsum += p ** 2
+            tsqsum += t ** 2
+            sse += (t - p) ** 2
+        self.stats = {}
+        pmean = psum / nt
+        tmean = tsum / nt
+        self.stats['bias'] = pmean - tmean
+        self.stats['mse'] = sse / nt
+        self.stats['pred_mean'] = psum / nt
+        self.stats['true_mean'] = tsum / nt
+        self.stats['pred_sqmean'] = psqsum / nt
+        self.stats['true_sqmean'] = tsqsum / nt
+        self.stats['pred_var'] = psqsum / nt - pmean ** 2
+        self.stats['true_var'] = tsqsum / nt - tmean ** 2
+        self.stats['r2'] = 1. - (self.stats['mse'] / self.stats['true_var'])
+        # Compute horizontal stats [var, lev]
+        self.stats['hor_tsqmean'] = np.mean(self.stats['true_sqmean'], axis=(0, 1))
+        self.stats['hor_tmean'] = np.mean(self.stats['true_mean'], axis=(0, 1))
+        self.stats['hor_mse'] = np.mean(self.stats['mse'], axis=(0, 1))
+        self.stats['hor_tvar'] = self.stats['hor_tsqmean'] - self.stats['hor_tmean'] ** 2
+        self.stats['hor_r2'] = 1 - (self.stats['hor_mse'] / self.stats['hor_tvar'])    
+    
     def compute_stats(self, niter=None):
         """Compute statistics in for [lat, lon, var, lev]"""
         nt = self.valid_gen.n_batches
