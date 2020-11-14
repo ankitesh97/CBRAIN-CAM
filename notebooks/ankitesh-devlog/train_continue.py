@@ -139,24 +139,26 @@ valid_gen_bf = DataGeneratorClimInv(
 
 model = Sequential()
 model.add(Input(shape=(108,)))
-model.add(Dense(units=192,
+model.add(Dense(units=320,
                 activation='relu')
 )
 # model.add(LeakyReLU(alpha=0.3))
 for i in range (4):
-    model.add(Dense(units=192,
+    model.add(Dense(units=320,
                 activation='relu')
 )   
 
 model.add(Dense(112, activation='linear'))
+
 path_HDF5 = '/DFS-L/DATA/pritchard/ankitesg/models/'
-model = tf.keras.models.load_model(f'{path_HDF5}/BF_RGV7_retrain.h5')
-opt = tf.keras.optimizers.Adam(learning_rate=0.0008433633337952192)
+model.load_weights('/export/nfs0home/ankitesg/CBRAIN-CAM/notebooks/ankitesh-devlog/random_search/RGBFV7/trial_6b5d276ab59b592ced1a9f36fc78cf13/checkpoints/epoch_0/checkpoint')
+# model = tf.keras.models.load_model(f'{path_HDF5}/BF_RGV7_retrain.h5')
+opt = tf.keras.optimizers.Adam(learning_rate=0.00041268008323824807)
 model.compile(optimizer=opt, loss='mse')
 # model.compile(tf.keras.optimizers.Adam(), loss="mse")
 
 earlyStopping = EarlyStopping(monitor='val_loss', patience=10, verbose=0, mode='min')
-mcp_save = ModelCheckpoint(path_HDF5+'BF_RGV7_retrain.h5',save_best_only=True, monitor='val_loss', mode='min')
+mcp_save = ModelCheckpoint(path_HDF5+'BF_RGV8_retrain.h5',save_best_only=True, monitor='val_loss', mode='min')
 
 with tf.device('/gpu:1'):
     Nep = 15
