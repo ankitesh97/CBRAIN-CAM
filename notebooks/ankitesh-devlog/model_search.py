@@ -158,7 +158,7 @@ dict_lay = {'SurRadLayer':SurRadLayer,'MassConsLayer':MassConsLayer,'EntConsLaye
 
 from kerastuner import HyperModel
 
-from kerastuner.tuners import RandomSearch
+from kerastuner.tuners import RandomSearch,BayesianOptimization
 
 class RGModel(HyperModel):
     def __init__(self, n_hidden):
@@ -182,7 +182,7 @@ class RGModel(HyperModel):
                     )
         )
         # model.add(LeakyReLU(alpha=0.3))
-        for i in range (4):
+        for i in range(hp.Int('num_layers', 3, 8)):
             model.add(Dense(units=hp.Int(
                             'units',
                             min_value=32,
@@ -223,14 +223,14 @@ MAX_TRIALS = 20
 EXECUTION_PER_TRIAL = 2
 
 
-tuner = RandomSearch(
+tuner = BayesianOptimization(
     hypermodel,
     objective='val_mean_squared_error',
     seed=1,
     max_trials=MAX_TRIALS,
     executions_per_trial=EXECUTION_PER_TRIAL,
     directory='random_search',
-    project_name='RGBFV7'
+    project_name='RGBFV8'
 )
 
 print(tuner.search_space_summary())
