@@ -182,7 +182,7 @@ class RGModel(HyperModel):
                     )
         )
         # model.add(LeakyReLU(alpha=0.3))
-        for i in range(hp.Int('num_layers', 3, 8)):
+        for i in range(hp.Int('num_layers', 4, 8)):
             model.add(Dense(units=hp.Int(
                             'units',
                             min_value=32,
@@ -219,8 +219,8 @@ class RGModel(HyperModel):
 hypermodel = RGModel(n_hidden=2)
 
 HYPERBAND_MAX_EPOCHS = 40
-MAX_TRIALS = 20
-EXECUTION_PER_TRIAL = 2
+MAX_TRIALS = 40
+EXECUTION_PER_TRIAL = 4
 
 
 tuner = BayesianOptimization(
@@ -242,6 +242,6 @@ tuner.search(train_gen_bf, epochs=N_EPOCH_SEARCH, validation_data=valid_gen_bf)
 print(tuner.results_summary())
 
 best_model = tuner.get_best_models(num_models=1)[0]
-best_model.save('/DFS-L/DATA/pritchard/ankitesg/models/BFv7.h5')
+best_model.save('/DFS-L/DATA/pritchard/ankitesg/models/BFv12.h5')
 
 
