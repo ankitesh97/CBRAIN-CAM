@@ -510,6 +510,33 @@ class QV2RHNumpy:
 
         X_result = np.concatenate([RHprior.astype(np.float32),X[:,30:]], axis=1)
         return X_result
+    
+    
+class QV2RHNumpyReal:
+    def __init__(self, inp_sub, inp_div, inp_subRH, inp_divRH, hyam, hybm):
+        self.inp_sub, self.inp_div, self.inp_subRH, self.inp_divRH, self.hyam, self.hybm = \
+            np.array(inp_sub), np.array(inp_div), np.array(inp_subRH), np.array(inp_divRH), \
+        np.array(hyam), np.array(hybm)
+        # Define variable indices here
+        # Input
+        self.QBP_idx = slice(0,26)
+        self.TBP_idx = slice(26,52)
+        self.PS_idx = 104
+        self.SHFLX_idx = 106
+        self.LHFLX_idx = 107
+
+    def process(self,X):
+        Tprior = X[:,self.TBP_idx]*self.inp_div[self.TBP_idx]+self.inp_sub[self.TBP_idx]
+        qvprior = X[:,self.QBP_idx]*self.inp_div[self.QBP_idx]+self.inp_sub[self.QBP_idx]
+        PSprior = X[:,self.PS_idx]*self.inp_div[self.PS_idx]+self.inp_sub[self.PS_idx]
+        print(PSprior.shape)
+        print(Tprior.shape)
+        print(qvprior.shape)
+        RHprior = (ThermLibNumpy.RHNumpy(Tprior,qvprior,P0,PSprior,self.hyam,self.hybm)-\
+                    self.inp_subRH[self.QBP_idx])/self.inp_divRH[self.QBP_idx]
+
+        X_result = np.concatenate([RHprior.astype(np.float32),X[:,26:]], axis=1)
+        return X_result
 
 class LhflxTransNumpy:
     def __init__(self, inp_sub, inp_div, hyam, hybm,epsilon=1e-3):
@@ -974,6 +1001,136 @@ class DataGeneratorClimInv(DataGenerator):
 
 
         return X_result
+    
+from enum import Enum
+class dataType(Enum):
+    ALL = 0
+    ALL_RH = 1
+    REDUCED_INP_DIM = 2
+    REMOVED_INP_LIQ_ICE = 3
+    REDUCED_OUT_DIM = 4
+    
+class DataGeneratorClimInvRealGeo(DataGenerator):
+
+    def __init__(self, data_fn, input_vars, output_vars,
+             norm_fn=None, input_transform=None, output_transform=None,
+             batch_size=1024, shuffle=True, xarray=False, var_cut_off=None, normalize_flag=True,
+             rh_trans=True,t2tns_trans=True,
+             lhflx_trans=True,
+             scaling=True,interpolate=True,
+             hyam=None,hybm=None,
+             inp_subRH=None,inp_divRH=None,
+             inp_subTNS=None,inp_divTNS=None,
+             lev=None, interm_size=40,
+             lower_lim=6,
+             is_continous=True,Tnot=5,
+                mode='train', exp=None,data_type=dataType.ALL.value):
+        self.scaling = scaling
+        self.interpolate = interpolate
+        self.rh_trans = rh_trans
+        self.t2tns_trans = t2tns_trans
+        self.lhflx_trans = lhflx_trans
+        self.inp_shape = 64
+        self.exp = exp
+        self.mode=mode
+        self.data_type = data_type
+        super().__init__(data_fn, input_vars,output_vars,norm_fn,input_transform,output_transform,
+                        batch_size,shuffle,xarray,var_cut_off,normalize_flag) ## call the base data generator
+        self.inp_sub = self.input_transform.sub
+        self.inp_div = self.input_transform.div
+        self.new_idx = np.concatenate((self.input_idxs[8:26],self.input_idxs[34:52],self.input_idxs[60:78],self.input_idxs[86:104],\
+        self.input_idxs[104:]))
+        self.new_idx = np.concatenate((np.arange(8,26),np.arange(34,52),np.arange(60,78),np.arange(86,104),np.arange(104,108)))
+        self.new_output_idx = np.concatenate((np.arange(8,26),np.arange(26,52),np.arange(60,78),np.arange(86,104),np.arange(104,112)))
+
+    def __getitem__(self, index):
+        # Compute start and end indices for batch
+        start_idx = index * self.batch_size
+        end_idx = start_idx + self.batch_size
+
+        # Grab batch from data
+        batch = self.data_ds['vars'][start_idx:end_idx]
+#         print(self.new_idx)
+        # Split into inputs and outputs
+        X = batch[:, self.input_idxs]
+        Y = batch[:, self.output_idxs]
+        # Normalize
+        X_norm = self.input_transform.transform(X)
+        Y = self.output_transform.transform(Y)
+        if self.data_type == dataType.REDUCED_INP_DIM.value:
+            return X_norm[:,self.new_idx], Y
+        if self.data_type == dataType.REDUCED_OUT_DIM.value:
+            return X_norm[:,self.new_idx], Y[:,self.new_output_idx]
+        
+        
+        return X_norm,Y
+    
+    
+    def transform(self,X):
+        X_norm = self.input_transform.transform(X)
+        X_result = X_norm
+
+        if self.exp:
+            if self.exp['LHFLX']:
+                if self.lhflx_trans:
+                    X_result = self.lhflxLayer.process(X_result)
+                    X_result = X_result[:,:64]
+                    X = X[:,:64]
+
+                if self.rh_trans:
+                    X_result = self.qv2rhLayer.process(X_result)
+                    
+                
+               
+                if self.t2tns_trans:
+                    X_result = self.t2tnsLayer.process(X_result)
+                    
+            else:
+                if self.rh_trans:
+                    X_result = self.qv2rhLayer.process(X_result) 
+                
+                
+               
+                if self.t2tns_trans:
+                    X_result = self.t2tnsLayer.process(X_result)
+                    
+                if self.lhflx_trans:
+                    X_result = self.lhflxLayer.process(X_result)
+                    X_result = X_result[:,:64]
+                    X = X[:,:64]
+
+
+        else:
+            if self.rh_trans:
+                X_result = self.qv2rhLayer.process(X_result)
+            
+               
+            if self.t2tns_trans:
+                X_result = self.t2tnsLayer.process_V1(X_result)
+                
+            if self.lhflx_trans:
+                X_result = self.lhflxLayer.process_V1(X_result)
+                X_result = X_result[:,:64]
+                X = X[:,:64]
+
+
+        if self.scaling:
+            scalings = self.scalingLayer.process(X)
+            X_result = np.hstack((X_result,scalings))
+
+        if self.interpolate:
+            interpolated = self.interpLayer.process(X,X_result)
+            X_result = np.hstack((X_result,interpolated))
+
+        if self.data_type == dataType.REDUCED_INP_DIM.value:
+            return X_result[:,self.new_idx]
+        if self.data_type == dataType.REDUCED_OUT_DIM.value:
+            return X_result[:,self.new_idx]
+        
+        
+        return X_result
+    
+
 
 ######################            Class for model diagnostics      #################
 class ClimateNet:
@@ -990,7 +1147,7 @@ class ClimateNet:
              #this can be none if no scaling is present
              train_gen_RH_pos=None,train_gen_RH_neg=None,
              train_gen_TNS_pos=None,train_gen_TNS_neg=None,
-                 exp = None
+                 exp = None,data_type=0
                 ):
 
 
@@ -1001,7 +1158,7 @@ class ClimateNet:
         in_vars = config['inputs']
         out_vars = config['outputs']
 
-        self.valid_gen = DataGeneratorClimInv(
+        self.valid_gen = DataGeneratorClimInvRealGeo(
                 data_fn = data_fn,
                 input_vars=in_vars,
                 output_vars=out_vars,
@@ -1021,7 +1178,8 @@ class ClimateNet:
                 inp_subRH=inp_subRH, inp_divRH=inp_divRH,
                 inp_subTNS=inp_subTNS,inp_divTNS=inp_divTNS,
                 mode='val',
-                exp = exp
+                exp = exp,
+                data_type=data_type
 
         )
 
@@ -1150,7 +1308,7 @@ def load_climate_model(dict_lay,config_fn,data_fn,lev,hyam,hybm,TRAINDIR,
                         model=None,
                         pos_model=None,neg_model=None,
                         train_gen_RH_pos=None,train_gen_RH_neg=None,
-                        train_gen_TNS_pos=None,train_gen_TNS_neg=None,exp=None):
+                        train_gen_TNS_pos=None,train_gen_TNS_neg=None,exp=None,data_type=0):
 
     obj = ClimateNet(dict_lay,data_fn,config_fn,
                      lev,hyam,hybm,TRAINDIR,
@@ -1163,5 +1321,5 @@ def load_climate_model(dict_lay,config_fn,data_fn,lev,hyam,hybm,TRAINDIR,
                     model = model,
                     pos_model=pos_model,neg_model=neg_model,
                     train_gen_RH_pos=train_gen_RH_pos,train_gen_RH_neg=train_gen_RH_neg,
-                    train_gen_TNS_pos=train_gen_TNS_pos,train_gen_TNS_neg=train_gen_TNS_neg,exp=exp)
+                        train_gen_TNS_pos=train_gen_TNS_pos,train_gen_TNS_neg=train_gen_TNS_neg,exp=exp,data_type=data_type)
     return obj
