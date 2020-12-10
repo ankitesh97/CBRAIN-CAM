@@ -11,4 +11,5 @@ tmp
 figures/
 .vscode/
 wkspectra/figs/
+notebooks/ankitesh-devlog/random_search/
 notebooks/presentation/saved_ds.pkl
