@@ -529,9 +529,6 @@ class QV2RHNumpyReal:
         Tprior = X[:,self.TBP_idx]*self.inp_div[self.TBP_idx]+self.inp_sub[self.TBP_idx]
         qvprior = X[:,self.QBP_idx]*self.inp_div[self.QBP_idx]+self.inp_sub[self.QBP_idx]
         PSprior = X[:,self.PS_idx]*self.inp_div[self.PS_idx]+self.inp_sub[self.PS_idx]
-        print(PSprior.shape)
-        print(Tprior.shape)
-        print(qvprior.shape)
         RHprior = (ThermLibNumpy.RHNumpy(Tprior,qvprior,P0,PSprior,self.hyam,self.hybm)-\
                     self.inp_subRH[self.QBP_idx])/self.inp_divRH[self.QBP_idx]
 
