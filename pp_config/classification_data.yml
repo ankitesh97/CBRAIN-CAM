@@ -1,0 +1,18 @@
+
+X_vars: [RH, TBP, PS, SOLIN, SHFLX, LHFLX,TS,QRL,QRS]
+
+y_vars: [PHQ, TPHYSTND, FSNT, FSNS, FLNT, FLNS]
+
+in_dir : /scratch/05823/tg851228/CBRAIN/sp8fbp_minus4k 
+
+in_fns : sp8fbp_minus4k.cam2.h2.0001-01-0*-00000.nc
+
+out_dir: /scratch/07064/tg863631/PrepData/WTS/split 
+
+out_fn: CI_RH_M4K_WTS_NORM_train.nc
+
+val_in_fns: sp8fbp_minus4k.cam2.h2.0001-01-0*-00000.nc 
+
+val_out_fn: CI_RH_M4K_WTS_NORM_valid.nc
+
+norm_fn: CI_RH_M4K_WTS_NORM_norm.nc

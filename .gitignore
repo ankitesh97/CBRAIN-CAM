@@ -2,6 +2,7 @@
 .idea/
 .old_logs
 __pycache__
+*.out
 .ipynb_checkpoints
 logs/
 saved_models/
@@ -10,4 +11,5 @@ tmp
 figures/
 .vscode/
 wkspectra/figs/
+notebooks/ankitesh-devlog/random_search/
 notebooks/presentation/saved_ds.pkl
